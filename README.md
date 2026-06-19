@@ -37,33 +37,69 @@ It is a **proposal engine, not an execution engine**. Every output is a human-re
 
 ---
 
+## UI Dashboard
+
+CodeSense includes a React web interface with GitHub OAuth login.
+
+```
+http://localhost:5174
+        │
+        ▼
+  ┌─────────────────┐
+  │   Login Page    │  "Continue with GitHub"
+  └────────┬────────┘
+           │ OAuth redirect
+           ▼
+  ┌──────────────────────────────────────────────┐
+  │  Dashboard                                   │
+  │  ┌────────────┐  ┌─────────────────────────┐ │
+  │  │ Workflows  │  │  Repository Selector    │ │
+  │  │            │  │  (searchable — lists    │ │
+  │  │ 🔍 PR Rev  │  │   all your GitHub repos)│ │
+  │  │ 🐛 Bugs    │  ├─────────────────────────┤ │
+  │  │ 💡 Explain │  │  Task Form              │ │
+  │  │ ♻️ Refactor │  │  (fields adapt per      │ │
+  │  │ 🧪 Tests   │  │   selected workflow)    │ │
+  │  │ 🛡️ Vulns   │  ├─────────────────────────┤ │
+  │  │ ...11 total│  │  ▶  Run Agent           │ │
+  │  └────────────┘  ├─────────────────────────┤ │
+  │                  │  Results Panel          │ │
+  │                  │  (markdown rendered,    │ │
+  │                  │   copy button)          │ │
+  │                  └─────────────────────────┘ │
+  └──────────────────────────────────────────────┘
+```
+
+---
+
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        FastAPI  (port 8080)                     │
-│                    15 endpoints  ·  Pydantic validation         │
-└────────────────────────────┬────────────────────────────────────┘
-                             │
-┌────────────────────────────▼────────────────────────────────────┐
-│                    LangGraph  StateGraph                         │
-│                                                                  │
-│  START → router ──────────────────────────────────────────────  │
-│               ├── clarifier (ambiguous) → END                   │
-│               │                                                  │
-│               ├── context_fetcher (file/AST/diff/call graph)    │
-│               │         └── rag_retriever                       │
-│               │                   └── llm_reasoner              │
-│               │                           └── output_formatter  │
-│               │                                       └── END   │
-│               │                                                  │
-│               └── analyser (Semgrep / Trivy / licensee)         │
-│                         ├── rag_retriever → llm_reasoner → END  │
-│                         └── llm_reasoner → END                  │
-└─────────────────────────────────────────────────────────────────┘
-         │               │              │             │
-   Chroma DB          Ollama         Postgres       Redis
-  (vector store)   (local LLM)   (feedback DB)   (cache)
+┌──────────────────────────────────────────────────┐
+│           React UI  (port 5174)                  │
+│   Login · Repo Selector · Task Form · Results    │
+└────────────────────┬─────────────────────────────┘
+                     │ HTTP + cookies
+┌────────────────────▼─────────────────────────────┐
+│              FastAPI  (port 8080)                │
+│     API endpoints · GitHub OAuth · Pydantic      │
+└────────────────────┬─────────────────────────────┘
+                     │
+┌────────────────────▼─────────────────────────────┐
+│              LangGraph  StateGraph               │
+│                                                  │
+│  START → router                                  │
+│            ├── clarifier (ambiguous) → END       │
+│            ├── context_fetcher                   │
+│            │       └── rag_retriever             │
+│            │               └── llm_reasoner      │
+│            │                       └── formatter │
+│            └── analyser                          │
+│                    ├── rag_retriever → llm → END │
+│                    └── llm_reasoner → END        │
+└──────────┬──────────┬─────────┬──────────────────┘
+     Chroma DB      Ollama   Postgres    Redis
+   (vector store) (local LLM) (feedback) (cache)
 ```
 
 ### Agent nodes
@@ -75,7 +111,7 @@ It is a **proposal engine, not an execution engine**. Every output is a human-re
 | `rag_retriever` | Semantic search over Chroma DB (top-K chunks) |
 | `analyser` | Runs Semgrep, Trivy, licensee, changelog_fetcher |
 | `llm_reasoner` | Calls CodeLlama/DeepSeek over assembled context |
-| `output_formatter` | Wraps findings in the structured Section D template |
+| `output_formatter` | Wraps findings in the structured output template |
 | `clarifier` | Asks one targeted question when intent is unclear |
 
 ### Tools
@@ -109,6 +145,8 @@ It is a **proposal engine, not an execution engine**. Every output is a human-re
 | Vulnerability scan | Trivy + OSV Scanner |
 | Database | PostgreSQL + SQLAlchemy async |
 | Cache | Redis |
+| UI | React 18 + Vite + Tailwind CSS |
+| Auth | GitHub OAuth2 + JWT session cookie |
 | Containerisation | Docker + Docker Compose |
 
 ---
@@ -116,8 +154,10 @@ It is a **proposal engine, not an execution engine**. Every output is a human-re
 ## Requirements
 
 - Docker + Docker Compose
+- Node.js 18+ (for the UI)
 - 16 GB RAM minimum (32 GB recommended for CodeLlama 34B)
-- Git access token (GitHub / Gitea / self-hosted)
+- GitHub account + Personal Access Token
+- GitHub OAuth App (for the UI login)
 
 > **No GPU required** — Ollama runs on CPU. GPU dramatically improves response time if available.
 
@@ -132,21 +172,32 @@ git clone https://github.com/your-org/codesense.git
 cd codesense
 ```
 
-### 2. Configure environment
+### 2. Create a GitHub OAuth App
+
+Go to **https://github.com/settings/developers** → OAuth Apps → New OAuth App:
+
+| Field | Value |
+|-------|-------|
+| Homepage URL | `http://localhost:5174` |
+| Authorization callback URL | `http://localhost:8080/api/v1/auth/callback` |
+
+Copy the **Client ID** and **Client Secret**.
+
+### 3. Configure environment
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` and set at minimum:
+Edit `.env` and fill in at minimum:
 
 ```env
 GIT_TOKEN=your_github_personal_access_token
+GITHUB_CLIENT_ID=your_oauth_app_client_id
+GITHUB_CLIENT_SECRET=your_oauth_app_client_secret
 ```
 
-All other defaults work out of the box for local Docker deployment.
-
-### 3. Configure your repositories
+### 4. Configure your repositories
 
 Edit `config/repos.yaml`:
 
@@ -162,29 +213,27 @@ repos:
 
 Supported languages: `python`, `typescript`, `javascript`, `csharp`, `go`
 
-### 4. Start all services
+### 5. Start all backend services
 
 ```bash
 docker compose up -d
 ```
 
-This starts: CodeSense API · Ollama · Chroma DB · PostgreSQL · Redis
+Starts: CodeSense API · Ollama · Chroma DB · PostgreSQL · Redis
 
-### 5. Pull the LLM models
+### 6. Pull the LLM models
 
 ```bash
-# Primary model (choose one)
-docker exec codesense-ollama ollama pull codellama:34b
-# or
-docker exec codesense-ollama ollama pull deepseek-coder-v2
+# Primary model (choose one based on your RAM)
+docker exec codesense-ollama ollama pull codellama:7b     # 4 GB  (fast)
+docker exec codesense-ollama ollama pull codellama:13b    # 7 GB  (recommended)
+docker exec codesense-ollama ollama pull codellama:34b    # 19 GB (best quality)
 
 # Embedding model (required)
 docker exec codesense-ollama ollama pull nomic-embed-text
 ```
 
-> Pulling `codellama:34b` downloads ~19 GB. Use `codellama:7b` for faster startup on limited hardware.
-
-### 6. Index your repositories
+### 7. Index your repositories
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/index/trigger \
@@ -198,109 +247,69 @@ Check indexing status:
 curl http://localhost:8080/api/v1/index/status
 ```
 
-### 7. Open the API docs
+### 8. Start the UI
 
+```bash
+cd frontend
+npm install
+npm run dev
 ```
-http://localhost:8080/docs
-```
+
+Open **http://localhost:5174**, click **Continue with GitHub**, select a repository, and run any workflow.
 
 ---
 
-## Usage Examples
+## Usage
 
-### Review a pull request
+### Via the UI (recommended)
+
+1. Open **http://localhost:5174**
+2. Login with your GitHub account
+3. Select a repository from the dropdown
+4. Choose a workflow from the left sidebar
+5. Fill in the form fields
+6. Click **▶ Run Agent**
+7. Results appear in the panel below (markdown rendered, copyable)
+
+### Via the API
 
 ```bash
+# PR Review
 curl -X POST http://localhost:8080/api/v1/review \
   -H "Content-Type: application/json" \
-  -d '{
-    "repo": "https://github.com/your-org/my-backend",
-    "pr_number": 142
-  }'
-```
+  -d '{ "repo": "https://github.com/your-org/my-backend", "pr_number": 142 }'
 
-### Explain a file or function
-
-```bash
-curl -X POST http://localhost:8080/api/v1/explain \
-  -H "Content-Type: application/json" \
-  -d '{
-    "repo": "https://github.com/your-org/my-backend",
-    "target": "app/services/payment_processor.py"
-  }'
-```
-
-### Scan for bugs
-
-```bash
+# Bug scan
 curl -X POST http://localhost:8080/api/v1/scan/bugs \
   -H "Content-Type: application/json" \
-  -d '{
-    "repo": "https://github.com/your-org/my-backend",
-    "scope": "app/api"
-  }'
-```
+  -d '{ "repo": "https://github.com/your-org/my-backend", "scope": "app/api" }'
 
-### Find similar bugs across repos
-
-```bash
-curl -X POST http://localhost:8080/api/v1/scan/similar \
+# Explain code
+curl -X POST http://localhost:8080/api/v1/explain \
   -H "Content-Type: application/json" \
-  -d '{
-    "known_bug": "user input is passed directly to SQL query without parameterisation",
-    "repos": ["my-backend", "worker-service"]
-  }'
-```
+  -d '{ "repo": "https://github.com/your-org/my-backend", "target": "app/services/payment.py" }'
 
-### Analyse impact of a signature change
+# Generate tests
+curl -X POST http://localhost:8080/api/v1/tests/generate \
+  -H "Content-Type: application/json" \
+  -d '{ "repo": "https://github.com/your-org/my-backend", "target": "app/services/payment.py", "framework": "pytest" }'
 
-```bash
+# CVE scan
+curl -X POST http://localhost:8080/api/v1/scan/vuln \
+  -H "Content-Type: application/json" \
+  -d '{ "repos": ["my-backend"], "alert_threshold": "HIGH" }'
+
+# Impact analysis
 curl -X POST http://localhost:8080/api/v1/impact \
   -H "Content-Type: application/json" \
   -d '{
-    "repos": ["my-backend", "worker-service", "frontend-app"],
+    "repos": ["my-backend", "worker-service"],
     "symbol": "app.services.IPaymentService.charge",
     "proposed_change": "Add required parameter: idempotency_key: str"
   }'
-```
 
-### Scan for CVEs
-
-```bash
-curl -X POST http://localhost:8080/api/v1/scan/vuln \
-  -H "Content-Type: application/json" \
-  -d '{
-    "repos": ["my-backend"],
-    "images": ["myapp:latest"],
-    "alert_threshold": "HIGH"
-  }'
-```
-
-### Generate tests
-
-```bash
-curl -X POST http://localhost:8080/api/v1/tests/generate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "repo": "https://github.com/your-org/my-backend",
-    "target": "app/services/payment_processor.py",
-    "framework": "pytest"
-  }'
-```
-
-### Submit feedback (suppress a false positive)
-
-```bash
-curl -X POST http://localhost:8080/api/v1/feedback \
-  -H "Content-Type: application/json" \
-  -d '{
-    "repo": "my-backend",
-    "file_path": "app/utils/hash.py",
-    "rule_id": "semgrep.md5-used",
-    "action": "suppress",
-    "developer": "raza",
-    "note": "MD5 is used for cache keys, not cryptographic hashing"
-  }'
+# Interactive API docs
+open http://localhost:8080/docs
 ```
 
 ---
@@ -312,13 +321,14 @@ codesense/
 ├── app/
 │   ├── main.py                  # FastAPI entry point
 │   ├── api/
+│   │   ├── auth.py              # GitHub OAuth2 + JWT session
 │   │   ├── models.py            # Pydantic request/response models
-│   │   └── router.py            # All 15 API endpoints
+│   │   └── router.py            # All API endpoints
 │   ├── agent/
 │   │   ├── graph.py             # LangGraph StateGraph (compiled)
 │   │   ├── state.py             # AgentState + CodeChunk schema
 │   │   └── nodes/
-│   │       ├── router_node.py   # Intent classification
+│   │       ├── router_node.py
 │   │       ├── context_fetcher.py
 │   │       ├── rag_retriever.py
 │   │       ├── analyser.py
@@ -326,23 +336,36 @@ codesense/
 │   │       ├── output_formatter.py
 │   │       └── clarifier.py
 │   ├── tools/
-│   │   ├── code_retriever.py    # Chroma DB semantic search
-│   │   ├── ast_parser.py        # Tree-sitter AST parser
-│   │   ├── call_graph.py        # Cross-repo symbol graph
-│   │   ├── static_analyzer.py   # Semgrep wrapper
-│   │   ├── vuln_scanner.py      # Trivy + OSV wrapper
-│   │   ├── license_checker.py   # License manifest scanner
-│   │   ├── diff_fetcher.py      # GitHub PR diff fetcher
-│   │   ├── file_reader.py       # File content reader
-│   │   └── changelog_fetcher.py # npm / PyPI changelog fetcher
+│   │   ├── code_retriever.py
+│   │   ├── ast_parser.py
+│   │   ├── call_graph.py
+│   │   ├── static_analyzer.py
+│   │   ├── vuln_scanner.py
+│   │   ├── license_checker.py
+│   │   ├── diff_fetcher.py
+│   │   ├── file_reader.py
+│   │   └── changelog_fetcher.py
 │   ├── indexer/
 │   │   ├── indexer.py           # Clone → chunk → embed → upsert
 │   │   └── chunker.py           # AST-aware file chunker
 │   ├── db/
-│   │   └── postgres.py          # SQLAlchemy models (feedback, index status)
+│   │   └── postgres.py          # SQLAlchemy models
 │   └── core/
-│       ├── config.py            # Settings from environment variables
+│       ├── config.py            # Settings from environment
 │       └── llm.py               # LLM + embeddings clients
+├── frontend/                    # React UI
+│   ├── src/
+│   │   ├── App.jsx              # Root component (auth gate)
+│   │   ├── hooks/useAuth.js     # GitHub OAuth session hook
+│   │   ├── pages/
+│   │   │   ├── LoginPage.jsx    # GitHub login screen
+│   │   │   └── Dashboard.jsx    # Main app after login
+│   │   └── components/
+│   │       ├── RepoSelector.jsx # Searchable repo dropdown
+│   │       ├── TaskForm.jsx     # Dynamic form per workflow
+│   │       └── ResultPanel.jsx  # Markdown results + copy
+│   ├── package.json
+│   └── vite.config.js
 ├── config/
 │   └── repos.yaml               # Repository configuration
 ├── docker-compose.yml
@@ -367,36 +390,34 @@ codesense/
 | `CHROMA_COLLECTION` | `codebase_index` | Chroma collection name |
 | `POSTGRES_URL` | `postgresql+asyncpg://...` | PostgreSQL connection string |
 | `REDIS_URL` | `redis://redis:6379/0` | Redis connection string |
-| `GIT_TOKEN` | — | GitHub / Gitea personal access token |
+| `GIT_TOKEN` | — | GitHub personal access token (`repo:read` scope) |
+| `GITHUB_CLIENT_ID` | — | GitHub OAuth App client ID |
+| `GITHUB_CLIENT_SECRET` | — | GitHub OAuth App client secret |
 | `GROQ_API_KEY` | — | Optional Groq API key for burst fallback |
-| `ALERT_WEBHOOK_URL` | — | Slack / Teams webhook for vulnerability alerts |
-| `REPOS_CONFIG_PATH` | `/config/repos.yaml` | Path to repos configuration file |
+| `ALERT_WEBHOOK_URL` | — | Slack / Teams webhook for CVE alerts |
+| `REPOS_CONFIG_PATH` | `/config/repos.yaml` | Path to repos config |
 | `LOG_LEVEL` | `INFO` | Logging level |
 
 ### `repos.yaml` schema
 
 ```yaml
 repos:
-  - name: my-service          # Unique identifier used in API requests
+  - name: my-service
     url: https://github.com/org/my-service
     branch: main
     language: python           # python | typescript | javascript | csharp | go
-    analyzers:
-      - semgrep                # Static analysis
-      - trivy                  # Container + dependency CVEs
-      - osv                    # Open Source Vulnerability database
-      - licensee               # License compliance
-    index_on_push: true        # Auto re-index on main branch push
+    analyzers: [semgrep, trivy, osv, licensee]
+    index_on_push: true
 
 index:
-  chunk_size_tokens: 400       # Max tokens per RAG chunk
-  chunk_overlap_tokens: 50     # Overlap between adjacent chunks
+  chunk_size_tokens: 400
+  chunk_overlap_tokens: 50
   embedding_model: nomic-embed-text
-  similarity_threshold: 0.72   # Minimum cosine similarity for RAG results
+  similarity_threshold: 0.72
   refresh_cron: "0 2 * * 0"   # Weekly re-index (Sunday 2am)
 
 alerts:
-  vuln_threshold: HIGH         # Minimum severity to alert on
+  vuln_threshold: HIGH
   notify_on: [CRITICAL, HIGH]
   webhook: ${ALERT_WEBHOOK_URL}
 ```
@@ -404,8 +425,6 @@ alerts:
 ---
 
 ## Lighter Model Options
-
-If `codellama:34b` is too large for your hardware:
 
 | Model | Size | Notes |
 |-------|------|-------|
@@ -423,10 +442,8 @@ OLLAMA_MODEL=codellama:13b
 
 ## API Reference
 
-Full interactive documentation is available at `http://localhost:8080/docs` once the service is running.
-
-| Method | Path | Workflow |
-|--------|------|----------|
+| Method | Path | Description |
+|--------|------|-------------|
 | `POST` | `/api/v1/review` | PR review |
 | `POST` | `/api/v1/scan/bugs` | Bug detection |
 | `POST` | `/api/v1/explain` | Code explanation |
@@ -438,31 +455,35 @@ Full interactive documentation is available at `http://localhost:8080/docs` once
 | `POST` | `/api/v1/deps/update` | Version bump proposals |
 | `POST` | `/api/v1/licenses` | License compliance |
 | `POST` | `/api/v1/scan/vuln` | Vulnerability scan |
-| `GET` | `/api/v1/index/status` | Indexing status per repo |
+| `GET`  | `/api/v1/index/status` | Indexing status per repo |
 | `POST` | `/api/v1/index/trigger` | Trigger re-indexing |
 | `POST` | `/api/v1/feedback` | Submit finding feedback |
-| `GET` | `/api/v1/health` | Service health check |
+| `GET`  | `/api/v1/health` | Service health check |
+| `GET`  | `/api/v1/auth/github` | GitHub OAuth redirect |
+| `GET`  | `/api/v1/auth/callback` | OAuth callback |
+| `GET`  | `/api/v1/auth/me` | Current user info |
+| `POST` | `/api/v1/auth/logout` | Clear session |
+| `GET`  | `/api/v1/auth/repos` | List user's GitHub repos |
+
+Full interactive docs: **http://localhost:8080/docs**
 
 ---
 
 ## How the RAG Pipeline Works
 
 1. **Indexing** — repositories are cloned locally, source files are parsed with Tree-sitter at function/class boundaries, chunked at ≤400 tokens, embedded with Nomic Embed Text, and upserted into Chroma DB.
-
-2. **Retrieval** — at query time, the user's request is embedded and used to retrieve the top-K most semantically similar code chunks (cosine similarity ≥ 0.72).
-
-3. **Context assembly** — retrieved chunks are ranked and assembled: primary target file first, then direct callers, then similar patterns.
-
-4. **LLM reasoning** — CodeLlama or DeepSeek-Coder receives the assembled context and produces structured findings following the output templates.
-
+2. **Retrieval** — the user's request is embedded and used to retrieve the top-K most semantically similar code chunks (cosine similarity ≥ 0.72).
+3. **Context assembly** — retrieved chunks are ranked: primary target file first, then direct callers, then similar patterns.
+4. **LLM reasoning** — CodeLlama or DeepSeek-Coder receives the assembled context and produces structured findings.
 5. **Feedback loop** — developer feedback (suppress / confirm) is stored in PostgreSQL and used to filter future scans in the same repository.
 
 ---
 
 ## Security & Privacy
 
-- **All code stays local** — Ollama runs inference on your own hardware. No code is sent to OpenAI, Anthropic, or any other cloud provider unless you explicitly enable the Groq fallback.
-- **Git token scope** — the token only needs `repo:read` scope for cloning and PR access.
+- **All code stays local** — Ollama runs inference on your own hardware. No code leaves your server.
+- **GitHub OAuth** — only `repo` and `read:user` scopes are requested. Tokens are stored in an httponly session cookie.
+- **Git token scope** — the `GIT_TOKEN` only needs `repo:read` for cloning and PR access.
 - **Groq fallback is opt-in** — leave `GROQ_API_KEY` empty to disable it entirely.
 
 ---
@@ -472,10 +493,13 @@ Full interactive documentation is available at `http://localhost:8080/docs` once
 Pull requests are welcome. Please open an issue first for major changes.
 
 ```bash
-# Run locally without Docker
+# Backend (without Docker)
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8080
+
+# Frontend
+cd frontend && npm install && npm run dev
 ```
 
 ---
@@ -486,4 +510,4 @@ uvicorn app.main:app --reload --port 8080
 
 ---
 
-**Built by Raza Ur Rehman · 2025**
+**Built by Raza Ur Rehman · SocialPie Engineering · 2025**
