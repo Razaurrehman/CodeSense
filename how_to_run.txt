@@ -1,0 +1,88 @@
+════════════════════════════════════════════════════════════════
+  CodeSense — How to Run
+════════════════════════════════════════════════════════════════
+
+STEP 1 — Clone & Configure
+──────────────────────────
+  cd ~/Desktop/codesense
+  cp .env.example .env
+
+  Edit .env and set these three at minimum:
+
+    GIT_TOKEN=your_github_pat
+    GITHUB_CLIENT_ID=your_oauth_client_id
+    GITHUB_CLIENT_SECRET=your_oauth_client_secret
+
+  Don't have an OAuth App yet?
+  Go to: https://github.com/settings/developers → OAuth Apps → New
+
+    Homepage URL  :  http://localhost:5174
+    Callback URL  :  http://localhost:8080/api/v1/auth/callback
+
+
+STEP 2 — Start Backend Services
+────────────────────────────────
+  docker compose up -d
+
+  This starts:
+    • CodeSense API   →  http://localhost:8080
+    • Ollama          →  http://localhost:11434
+    • Chroma DB       →  http://localhost:8000
+    • PostgreSQL      →  localhost:5432
+    • Redis           →  localhost:6379
+
+
+STEP 3 — Pull AI Models (first time only)
+──────────────────────────────────────────
+  Pick one based on your RAM:
+
+    docker exec codesense-ollama ollama pull codellama:7b    # 4 GB
+    docker exec codesense-ollama ollama pull codellama:13b   # 7 GB  (recommended)
+    docker exec codesense-ollama ollama pull codellama:34b   # 19 GB (best quality)
+
+  Required for semantic search (always pull this):
+
+    docker exec codesense-ollama ollama pull nomic-embed-text
+
+
+STEP 4 — Index Your Repositories
+──────────────────────────────────
+  curl -X POST http://localhost:8080/api/v1/index/trigger \
+    -H "Content-Type: application/json" -d '{}'
+
+  Check status:
+
+    curl http://localhost:8080/api/v1/index/status
+
+
+STEP 5 — Start the UI
+──────────────────────
+  cd frontend
+  npm install
+  npm run dev
+
+
+STEP 6 — Open & Use
+────────────────────
+  Web UI (login + dashboard)  →  http://localhost:5174
+  API docs (no login needed)  →  http://localhost:8080/docs
+  Health check                →  http://localhost:8080/api/v1/health
+
+  1. Go to http://localhost:5174
+  2. Click "Continue with GitHub"
+  3. Select a repository
+  4. Pick a workflow from the sidebar
+  5. Fill the form → click ▶ Run Agent
+
+
+USEFUL COMMANDS
+───────────────
+  View backend logs       →  docker compose logs -f app
+  Stop everything         →  docker compose down
+  Restart backend only    →  docker compose restart app
+  Indexing status         →  curl http://localhost:8080/api/v1/index/status
+
+
+════════════════════════════════════════════════════════════════
+  Built by Raza Ur Rehman · SocialPie Engineering · 2025
+════════════════════════════════════════════════════════════════
