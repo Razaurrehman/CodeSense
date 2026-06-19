@@ -1,0 +1,75 @@
+version: "3.9"
+
+services:
+
+  app:
+    build: .
+    container_name: codesense-app
+    ports:
+      - "8080:8080"
+    env_file: .env
+    volumes:
+      - ./config:/config:ro
+      - ./repos:/repos
+    depends_on:
+      - ollama
+      - chromadb
+      - postgres
+      - redis
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: codesense-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    # GPU support (uncomment if available):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: codesense-chroma
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      - ANONYMIZED_TELEMETRY=false
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: codesense-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: codeagent
+      POSTGRES_USER: codeagent
+      POSTGRES_PASSWORD: codeagent
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: codesense-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
+  chroma_data:
+  postgres_data:
+  redis_data:

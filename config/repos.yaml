@@ -1,0 +1,26 @@
+repos:
+  - name: backend-api
+    url: https://github.com/org/backend-api
+    branch: main
+    language: csharp
+    analyzers: [semgrep, trivy, osv, licensee]
+    index_on_push: true
+
+  - name: frontend-app
+    url: https://github.com/org/frontend-app
+    branch: main
+    language: typescript
+    analyzers: [semgrep, osv, licensee]
+    index_on_push: true
+
+index:
+  chunk_size_tokens: 400
+  chunk_overlap_tokens: 50
+  embedding_model: nomic-embed-text
+  similarity_threshold: 0.72
+  refresh_cron: "0 2 * * 0"
+
+alerts:
+  vuln_threshold: HIGH
+  notify_on: [CRITICAL, HIGH]
+  webhook: ${ALERT_WEBHOOK_URL}

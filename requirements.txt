@@ -1,0 +1,45 @@
+# Web framework
+fastapi==0.115.5
+uvicorn[standard]==0.32.0
+python-multipart==0.0.12
+
+# LangChain / LangGraph
+langchain==0.3.7
+langchain-community==0.3.7
+langchain-ollama==0.2.1
+langgraph==0.2.48
+
+# Vector store
+chromadb==0.5.20
+
+# AST parsing
+tree-sitter==0.23.1
+tree-sitter-python==0.23.2
+tree-sitter-javascript==0.23.0
+tree-sitter-typescript==0.23.1
+
+# Database
+asyncpg==0.30.0
+sqlalchemy[asyncio]==2.0.36
+
+# Redis cache
+redis[asyncio]==5.2.0
+
+# HTTP client
+httpx==0.28.0
+aiohttp==3.11.7
+
+# Config / env
+pydantic==2.10.2
+pydantic-settings==2.6.1
+python-dotenv==1.0.1
+pyyaml==6.0.2
+
+# Git integration
+gitpython==3.1.43
+pygithub==2.5.0
+
+# Utilities
+tenacity==9.0.0
+structlog==24.4.0
+rich==13.9.4
