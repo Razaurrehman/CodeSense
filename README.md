@@ -486,4 +486,4 @@ uvicorn app.main:app --reload --port 8080
 
 ---
 
-**Built by Raza Ur Rehman · SocialPie Engineering · 2025**
+**Built by Raza Ur Rehman · 2025**
