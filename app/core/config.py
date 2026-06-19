@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     # Git
     git_token: str = ""
 
+    # GitHub OAuth
+    github_client_id:     str = ""
+    github_client_secret: str = ""
+
     # Optional
     groq_api_key: str      = ""
     alert_webhook_url: str = ""
