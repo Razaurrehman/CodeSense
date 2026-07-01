@@ -5,7 +5,7 @@ import TaskForm, { TASKS } from '../components/TaskForm'
 import ResultPanel   from '../components/ResultPanel'
 
 export default function Dashboard({ user, onLogout }) {
-  const [selectedRepo, setSelectedRepo] = useState(null)
+  const [selectedRepos, setSelectedRepos] = useState([])
   const [activeTask,   setActiveTask]   = useState(TASKS[0].key)
   const [loading,      setLoading]      = useState(false)
   const [result,       setResult]       = useState(null)
@@ -101,7 +101,7 @@ export default function Dashboard({ user, onLogout }) {
               <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">
                 Repository
               </label>
-              <RepoSelector selected={selectedRepo} onSelect={setSelectedRepo} />
+              <RepoSelector selected={selectedRepos} onSelect={setSelectedRepos} />
             </div>
 
             {/* Active task title */}
@@ -113,7 +113,7 @@ export default function Dashboard({ user, onLogout }) {
             {/* Task form */}
             <TaskForm
               task={activeTask}
-              repo={selectedRepo}
+              repos={selectedRepos}
               onSubmit={handleRun}
               loading={loading}
             />

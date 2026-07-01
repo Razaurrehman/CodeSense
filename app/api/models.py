@@ -25,7 +25,7 @@ class FeedbackRequest(BaseModel):
 class PRReviewRequest(BaseModel):
     user_story: str = "pr_review"
     repo:       str = Field(..., description="Full GitHub repo URL")
-    pr_number:  int
+    pr_number:  Optional[int] = None
 
 
 # ── US-2  Bug Scan ────────────────────────────────────────────────
@@ -41,7 +41,7 @@ class BugScanRequest(BaseModel):
 class ExplainCodeRequest(BaseModel):
     user_story: str = "explain_code"
     repo:       str
-    target:     str = Field(..., description="file_path, function_name, or class_name")
+    target:     Optional[str] = None
 
 
 # ── US-4  Refactor ────────────────────────────────────────────────
@@ -49,15 +49,15 @@ class ExplainCodeRequest(BaseModel):
 class RefactorRequest(BaseModel):
     user_story: str = "refactor"
     repos:      list[str]
-    target:     str
-    goal:       str
+    target:     Optional[str] = None
+    goal:       Optional[str] = None
 
 
 # ── US-5  Similar Bugs ────────────────────────────────────────────
 
 class SimilarBugsRequest(BaseModel):
     user_story: str = "similar_bugs"
-    known_bug:  str = Field(..., description="Code snippet or description of the known bug")
+    known_bug:  Optional[str] = None
     repos:      list[str]
 
 
@@ -66,7 +66,7 @@ class SimilarBugsRequest(BaseModel):
 class GenerateTestsRequest(BaseModel):
     user_story: str = "generate_tests"
     repo:       str
-    target:     str
+    target:     Optional[str] = None
     framework:  str = "auto-detect"
 
 
@@ -75,8 +75,8 @@ class GenerateTestsRequest(BaseModel):
 class MigrationPlanRequest(BaseModel):
     user_story:   str = "migration_plan"
     repo:         str
-    component:    str
-    target_stack: str
+    component:    Optional[str] = None
+    target_stack: Optional[str] = None
 
 
 # ── US-8  Impact Analysis ─────────────────────────────────────────
@@ -84,8 +84,8 @@ class MigrationPlanRequest(BaseModel):
 class ImpactAnalysisRequest(BaseModel):
     user_story:      str = "impact_analysis"
     repos:           list[str]
-    symbol:          str = Field(..., description="Fully qualified symbol name")
-    proposed_change: str
+    symbol:          Optional[str] = None
+    proposed_change: Optional[str] = None
 
 
 # ── US-9  Version Bump ────────────────────────────────────────────
@@ -108,6 +108,7 @@ class LicenseCheckRequest(BaseModel):
 
 class VulnScanRequest(BaseModel):
     user_story:      str = "vuln_scan"
+    repo:            Optional[str]   = None
     repos:           list[str]       = Field(default_factory=list)
     images:          list[str]       = Field(default_factory=list)
     alert_threshold: str             = Field("HIGH", pattern="^(CRITICAL|HIGH|MEDIUM|LOW)$")

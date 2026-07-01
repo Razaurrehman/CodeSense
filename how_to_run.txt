@@ -2,87 +2,146 @@
   CodeSense — How to Run
 ════════════════════════════════════════════════════════════════
 
-STEP 1 — Clone & Configure
-──────────────────────────
+STEP 1 — Configure Environment
+────────────────────────────────
   cd ~/Desktop/codesense
   cp .env.example .env
 
-  Edit .env and set these three at minimum:
+  Edit .env and set all five values:
 
-    GIT_TOKEN=your_github_pat
+    GIT_TOKEN=your_fine_grained_pat
     GITHUB_CLIENT_ID=your_oauth_client_id
     GITHUB_CLIENT_SECRET=your_oauth_client_secret
+    GROQ_API_KEY=your_groq_api_key
+    OLLAMA_MODEL=codellama:7b
 
-  Don't have an OAuth App yet?
-  Go to: https://github.com/settings/developers → OAuth Apps → New
+  GitHub OAuth App (if you don't have one):
+  → https://github.com/settings/developers → OAuth Apps → New
 
     Homepage URL  :  http://localhost:5174
     Callback URL  :  http://localhost:8080/api/v1/auth/callback
 
+  Fine-grained GitHub PAT (if you don't have one):
+  → https://github.com/settings/tokens?type=beta → Generate new token
+  Required permissions: Contents: Read, Pull requests: Read, Metadata: Read
+
+  Groq API key (free, ~2-5s responses):
+  → https://console.groq.com → API Keys → Create new key
+
 
 STEP 2 — Start Backend Services
 ────────────────────────────────
-  docker compose up -d
+  sg docker -c "docker compose up -d"
 
   This starts:
     • CodeSense API   →  http://localhost:8080
     • Ollama          →  http://localhost:11434
-    • Chroma DB       →  http://localhost:8000
-    • PostgreSQL      →  localhost:5432
-    • Redis           →  localhost:6379
+    • ChromaDB        →  http://localhost:8000
+    • PostgreSQL      →  localhost:5433  (remapped from 5432)
+    • Redis           →  localhost:6380  (remapped from 6379)
+
+  NOTE: Use "sg docker -c" prefix for all docker commands.
+  This is required because the docker group needs a session restart to take effect.
 
 
-STEP 3 — Pull AI Models (first time only)
-──────────────────────────────────────────
-  Pick one based on your RAM:
+STEP 3 — Pull Ollama Models (first time only)
+──────────────────────────────────────────────
+  Fallback LLM (used when Groq rate-limits):
 
-    docker exec codesense-ollama ollama pull codellama:7b    # 4 GB
-    docker exec codesense-ollama ollama pull codellama:13b   # 7 GB  (recommended)
-    docker exec codesense-ollama ollama pull codellama:34b   # 19 GB (best quality)
+    sg docker -c "docker exec codesense-ollama ollama pull codellama:7b"
 
   Required for semantic search (always pull this):
 
-    docker exec codesense-ollama ollama pull nomic-embed-text
+    sg docker -c "docker exec codesense-ollama ollama pull nomic-embed-text"
 
 
-STEP 4 — Index Your Repositories
-──────────────────────────────────
-  curl -X POST http://localhost:8080/api/v1/index/trigger \
-    -H "Content-Type: application/json" -d '{}'
-
-  Check status:
-
-    curl http://localhost:8080/api/v1/index/status
-
-
-STEP 5 — Start the UI
+STEP 4 — Start the UI
 ──────────────────────
-  cd frontend
-  npm install
+  cd ~/Desktop/codesense/frontend
+  npm install        # first time only
   npm run dev
 
+  To expose the UI on your local network IP (192.168.5.30):
+  → vite.config.js already has host: true configured
+  → Update your GitHub OAuth App URLs to use the network IP
 
-STEP 6 — Open & Use
+
+STEP 5 — Open & Use
 ────────────────────
-  Web UI (login + dashboard)  →  http://localhost:5174
-  API docs (no login needed)  →  http://localhost:8080/docs
-  Health check                →  http://localhost:8080/api/v1/health
+  Web UI     →  http://localhost:5174   (or http://192.168.5.30:5174)
+  API docs   →  http://localhost:8080/docs
+  Health     →  http://localhost:8080/api/v1/health
 
   1. Go to http://localhost:5174
   2. Click "Continue with GitHub"
-  3. Select a repository
+  3. Select one or more repositories using the multi-select picker
   4. Pick a workflow from the sidebar
-  5. Fill the form → click ▶ Run Agent
-
-
-USEFUL COMMANDS
-───────────────
-  View backend logs       →  docker compose logs -f app
-  Stop everything         →  docker compose down
-  Restart backend only    →  docker compose restart app
-  Indexing status         →  curl http://localhost:8080/api/v1/index/status
+  5. Click ▶ Run Agent  — no other inputs needed
 
 
 ════════════════════════════════════════════════════════════════
-  Built by Raza Ur Rehman · SocialPie Engineering · 2025
+  USEFUL COMMANDS
+════════════════════════════════════════════════════════════════
+
+  Real-time backend logs:
+    sg docker -c "docker compose logs -f app"
+
+  Restart backend only:
+    sg docker -c "docker compose up -d --force-recreate app"
+
+  Stop everything:
+    sg docker -c "docker compose down"
+
+  Health check:
+    curl http://localhost:8080/api/v1/health
+
+  Rebuild frontend (after UI code changes):
+    cd ~/Desktop/codesense/frontend && npm run build
+
+
+════════════════════════════════════════════════════════════════
+  PATCHING BACKEND CODE (without full rebuild)
+════════════════════════════════════════════════════════════════
+
+  Use this workflow to apply Python file changes fast:
+
+    sg docker -c "docker run -d --name cs_patch --entrypoint sleep codesense-app 3600"
+    sg docker -c "docker cp <local-file> cs_patch:/app/<container-path>"
+    sg docker -c "docker commit cs_patch codesense-app && docker rm -f cs_patch"
+    sg docker -c "docker compose up -d --force-recreate app"
+
+  Example — patch llm_reasoner.py:
+    sg docker -c "docker cp app/agent/nodes/llm_reasoner.py cs_patch:/app/app/agent/nodes/llm_reasoner.py"
+
+  Then rebuild frontend if any .jsx files changed:
+    cd frontend && npm run build
+
+
+════════════════════════════════════════════════════════════════
+  HOW IT WORKS
+════════════════════════════════════════════════════════════════
+
+  LLM:
+    Primary  →  Groq API (llama-3.3-70b-versatile) — ~2-5s per task
+    Fallback →  Ollama local (codellama:7b) — used on Groq 429 / rate limit
+
+  Groq free tier limits:
+    1,000 requests/day · 30 req/min · 6,000 tokens/min · 100,000 tokens/day
+
+  All 11 tasks are zero-input — select a repo and click Run Agent:
+    PR Review      →  auto-fetches all open PRs (up to 5) and reviews each
+    Bug Scan       →  per-chunk scan across full repo (80-line chunks, max 25)
+    Explain Code   →  architecture overview: layers, modules, data flow, entry points
+    Refactor       →  identifies refactoring opportunities with priority + code snippets
+    Similar Bugs   →  finds recurring bug patterns appearing in 2+ locations
+    Generate Tests →  auto-detects framework, generates runnable test code
+    Migration Plan →  phased strangler-fig plan with effort estimates
+    Impact Analysis →  blast-radius map of high-impact symbols + hotspot files
+    Version Bumps  →  reads manifests, recommends specific version numbers
+    License Check  →  audits LICENSE + manifests for copyleft compliance risks
+    Vuln Scan      →  CVE detection across all dependency manifests
+
+
+════════════════════════════════════════════════════════════════
+  Built by Raza Ur Rehman · SocialPie Engineering · 2026
 ════════════════════════════════════════════════════════════════

@@ -7,20 +7,21 @@ python-multipart==0.0.12
 langchain==0.3.7
 langchain-community==0.3.7
 langchain-ollama==0.2.1
+langchain-groq==0.2.4
 langgraph==0.2.48
 
 # Vector store
 chromadb==0.5.20
 
 # AST parsing
-tree-sitter==0.23.1
+tree-sitter==0.23.2
 tree-sitter-python==0.23.2
 tree-sitter-javascript==0.23.0
-tree-sitter-typescript==0.23.1
+tree-sitter-typescript==0.23.2
 
 # Database
 asyncpg==0.30.0
-sqlalchemy[asyncio]==2.0.36
+sqlalchemy[asyncio]==2.0.35
 
 # Redis cache
 redis[asyncio]==5.2.0

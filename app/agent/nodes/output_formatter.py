@@ -29,8 +29,8 @@ def _build_header(us: str, req: dict) -> str:
     ts = _ts()
     headers = {
         "pr_review": (
-            f"[AI Review] Pull Request #{req.get('pr_number', '?')} — "
-            f"{req.get('repo', '').split('/')[-1]}\n"
+            f"[AI Review] Open Pull Requests — "
+            f"{req.get('repo', '').rstrip('/').removesuffix('.git').split('/')[-1]}\n"
             f"Generated: {ts}"
         ),
         "bug_scan": (
@@ -39,52 +39,48 @@ def _build_header(us: str, req: dict) -> str:
             f"Generated: {ts}"
         ),
         "explain_code": (
-            f"Code Explanation — {req.get('target', '')}\n"
-            f"Repo     : {req.get('repo', '')}\n"
+            f"Code Explanation — {req.get('repo', '').rstrip('/').removesuffix('.git').split('/')[-1]}\n"
+            f"Scope    : full repository\n"
             f"Generated: {ts}"
         ),
         "refactor": (
-            f"Refactoring Proposal — {req.get('target', '')}\n"
-            f"Goal     : {req.get('goal', '')}\n"
+            f"Refactoring Analysis — {', '.join(req.get('repos', []))}\n"
+            f"Scope    : full repository\n"
             f"Generated: {ts}"
         ),
         "similar_bugs": (
-            f"Similar Bug Detection Report\n"
-            f"Repos    : {', '.join(req.get('repos', []))}\n"
+            f"Similar Bug Pattern Report — {', '.join(req.get('repos', []))}\n"
+            f"Scope    : full repository\n"
             f"Generated: {ts}"
         ),
         "generate_tests": (
-            f"Test Generation Report — {req.get('target', '')}\n"
-            f"Framework: {req.get('framework', 'auto-detect')}\n"
+            f"Test Generation Report — {req.get('repo', '').rstrip('/').removesuffix('.git').split('/')[-1]}\n"
+            f"Scope    : full repository\n"
             f"Generated: {ts}"
         ),
         "migration_plan": (
-            f"Migration Plan — {req.get('component', '')}\n"
-            f"From     : (current)\n"
-            f"To       : {req.get('target_stack', '')}\n"
+            f"Migration Plan — {req.get('repo', '').rstrip('/').removesuffix('.git').split('/')[-1]}\n"
+            f"Scope    : full repository\n"
             f"Generated: {ts}"
         ),
         "impact_analysis": (
-            f"Impact Analysis — {req.get('symbol', '')}\n"
-            f"Proposed : {req.get('proposed_change', '')}\n"
-            f"Repos    : {', '.join(req.get('repos', []))}\n"
+            f"Impact Analysis — {', '.join(req.get('repos', []))}\n"
+            f"Scope    : full repository\n"
             f"Generated: {ts}"
         ),
         "version_bump": (
-            f"Dependency Update Report\n"
-            f"Repos    : {', '.join(req.get('repos', []))}\n"
-            f"Ecosystem: {req.get('ecosystem', 'all')}\n"
+            f"Dependency Update Report — {', '.join(req.get('repos', []))}\n"
+            f"Scope    : full repository\n"
             f"Generated: {ts}"
         ),
         "license_check": (
-            f"License Compliance Report\n"
-            f"Project  : {req.get('project_type', 'commercial')}\n"
-            f"Repos    : {', '.join(req.get('repos', []))}\n"
+            f"License Compliance Report — {', '.join(req.get('repos', []))}\n"
+            f"Scope    : full repository\n"
             f"Generated: {ts}"
         ),
         "vuln_scan": (
-            f"Vulnerability Report\n"
-            f"Repos    : {', '.join(req.get('repos', []))}\n"
+            f"Vulnerability Report — {req.get('repo', '').rstrip('/').removesuffix('.git').split('/')[-1]}\n"
+            f"Scope    : full repository\n"
             f"Generated: {ts}"
         ),
     }

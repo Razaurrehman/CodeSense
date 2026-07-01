@@ -10,12 +10,11 @@ from app.agent.nodes.output_formatter import output_formatter_node
 from app.agent.nodes.clarifier        import clarifier_node
 
 # Stories that start with context_fetcher (need file/AST/diff context)
-CONTEXT_FIRST = {"pr_review", "explain_code", "refactor",
-                 "generate_tests", "migration_plan", "impact_analysis"}
+CONTEXT_FIRST = {"pr_review"}
 
 # Stories that start with analyser (need static/vuln/license tools)
-ANALYSER_FIRST = {"bug_scan", "similar_bugs", "version_bump",
-                  "license_check", "vuln_scan"}
+ANALYSER_FIRST = {"bug_scan", "similar_bugs", "explain_code", "refactor",
+                  "generate_tests", "migration_plan", "impact_analysis", "version_bump", "license_check", "vuln_scan"}
 
 
 def _route_after_router(state: AgentState) -> str:
@@ -27,8 +26,7 @@ def _route_after_router(state: AgentState) -> str:
 
 
 def _route_after_analyser(state: AgentState) -> str:
-    # similar_bugs and bug_scan benefit from RAG re-ranking
-    if state.user_story in ("similar_bugs", "bug_scan"):
+    if state.user_story in ("similar_bugs", "bug_scan", "explain_code", "refactor", "generate_tests", "migration_plan", "impact_analysis", "version_bump", "license_check", "vuln_scan"):
         return "rag_retriever"
     return "llm_reasoner"
 
@@ -107,4 +105,4 @@ async def run_agent(request: dict, session_history: list[dict] | None = None) ->
     )
 
     final_state = await compiled_graph.ainvoke(initial_state)
-    return final_state.final_output
+    return final_state.get("final_output", "")

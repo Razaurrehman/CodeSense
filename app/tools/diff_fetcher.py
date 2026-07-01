@@ -4,20 +4,40 @@ import httpx
 from app.core.config import settings
 
 
+def _parse_repo(repo_url: str) -> tuple[str, str]:
+    parts = repo_url.rstrip("/").removesuffix(".git").split("/")
+    return parts[-2], parts[-1]
+
+
+async def list_open_prs(repo_url: str, limit: int = 5) -> list[dict]:
+    """Return open PRs for a repo (up to `limit`)."""
+    org, repo = _parse_repo(repo_url)
+    headers = {
+        "Accept": "application/vnd.github.v3+json",
+        "Authorization": f"Bearer {settings.git_token}",
+    }
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(
+            f"https://api.github.com/repos/{org}/{repo}/pulls",
+            headers=headers,
+            params={"state": "open", "per_page": limit},
+        )
+        resp.raise_for_status()
+        return [
+            {
+                "number":     pr["number"],
+                "title":      pr["title"],
+                "author":     pr["user"]["login"],
+                "created_at": pr["created_at"],
+                "url":        pr["html_url"],
+            }
+            for pr in resp.json()
+        ]
+
+
 async def fetch_pr_diff(repo_url: str, pr_number: int) -> str:
-    """
-    Fetch the unified diff for a pull request.
-
-    Args:
-        repo_url:   Full GitHub repo URL (https://github.com/org/repo).
-        pr_number:  Pull request number.
-
-    Returns:
-        Unified diff string.
-    """
-    # Parse org/repo from URL
-    parts = repo_url.rstrip("/").split("/")
-    org, repo = parts[-2], parts[-1]
+    """Fetch the unified diff for a pull request."""
+    org, repo = _parse_repo(repo_url)
 
     headers = {
         "Accept": "application/vnd.github.v3.diff",
@@ -36,8 +56,7 @@ async def fetch_pr_diff(repo_url: str, pr_number: int) -> str:
 
 async def fetch_pr_metadata(repo_url: str, pr_number: int) -> dict:
     """Fetch PR title, description, and changed files."""
-    parts = repo_url.rstrip("/").split("/")
-    org, repo = parts[-2], parts[-1]
+    org, repo = _parse_repo(repo_url)
 
     headers = {
         "Accept": "application/vnd.github.v3+json",
