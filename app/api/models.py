@@ -122,3 +122,36 @@ class IndexStatusResponse(BaseModel):
 
 class IndexTriggerRequest(BaseModel):
     repo_name: Optional[str] = None  # None = all repos
+
+
+# ── Scan Jobs ─────────────────────────────────────────────────────
+
+VALID_SCAN_TYPES = {
+    "pr_review", "bug_scan", "explain_code", "refactor", "similar_bugs",
+    "generate_tests", "migration_plan", "impact_analysis",
+    "version_bump", "license_check", "vuln_scan",
+}
+
+
+class CreateJobRequest(BaseModel):
+    repo_url:   str            = Field(..., description="Full GitHub repo URL")
+    scan_types: list[str]      = Field(..., min_length=1)
+    pr_number:  Optional[int]  = None
+
+    def model_post_init(self, __context):
+        bad = set(self.scan_types) - VALID_SCAN_TYPES
+        if bad:
+            raise ValueError(f"Unknown scan types: {bad}")
+
+
+class JobResponse(BaseModel):
+    id:              int
+    repo_name:       str
+    repo_url:        str
+    scan_types:      list[str]
+    status:          str
+    total_scans:     int
+    completed_scans: int
+    pdf_ready:       bool
+    created_at:      str
+    completed_at:    Optional[str] = None

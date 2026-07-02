@@ -35,6 +35,7 @@ STEP 2 — Start Backend Services
 
   This starts:
     • CodeSense API   →  http://localhost:8080
+    • arq Worker      →  (internal — processes queued scan jobs)
     • Ollama          →  http://localhost:11434
     • ChromaDB        →  http://localhost:8000
     • PostgreSQL      →  localhost:5433  (remapped from 5432)
@@ -61,33 +62,49 @@ STEP 4 — Start the UI
   npm install        # first time only
   npm run dev
 
-  To expose the UI on your local network IP (192.168.5.30):
-  → vite.config.js already has host: true configured
-  → Update your GitHub OAuth App URLs to use the network IP
+  UI runs on http://localhost:5174
 
 
 STEP 5 — Open & Use
 ────────────────────
-  Web UI     →  http://localhost:5174   (or http://192.168.5.30:5174)
+  Web UI     →  http://localhost:5174
   API docs   →  http://localhost:8080/docs
   Health     →  http://localhost:8080/api/v1/health
 
-  1. Go to http://localhost:5174
-  2. Click "Continue with GitHub"
-  3. Select one or more repositories using the multi-select picker
-  4. Pick a workflow from the sidebar
-  5. Click ▶ Run Agent  — no other inputs needed
+  Running a single workflow scan:
+    1. Go to http://localhost:5174 and log in with GitHub
+    2. Click a workflow in the sidebar (e.g. Bug Scan)
+    3. Click "+ Add Scan" (top right)
+    4. Select a repository from the dropdown
+    5. For PR Review: also select an open pull request from the list
+    6. Click "Run Scan" — the job is queued via Redis/arq
+    7. Table refreshes every 6 seconds; click "Analytics" when done
+
+  Running a full multi-scan batch:
+    1. Click "Repo Scans" in the sidebar
+    2. Click "+ Scan Repository"
+    3. Select a repo and one or more scan types
+    4. Click "Run Scan"
+    5. Download the PDF report when status shows "Completed"
+
+  Viewing results:
+    • Analytics button → charts (findings by type, scan status pie) + scan results table
+    • View Findings button → right-side drawer with bullet-point findings + raw output
+    • Download PDF → full formatted report for all scan types in the job
 
 
 ════════════════════════════════════════════════════════════════
   USEFUL COMMANDS
 ════════════════════════════════════════════════════════════════
 
-  Real-time backend logs:
+  Live backend logs:
     sg docker -c "docker compose logs -f app"
 
-  Restart backend only:
-    sg docker -c "docker compose up -d --force-recreate app"
+  Live worker logs (scan job processing):
+    sg docker -c "docker compose logs -f worker"
+
+  Restart app + worker:
+    sg docker -c "docker compose up -d --force-recreate app worker"
 
   Stop everything:
     sg docker -c "docker compose down"
@@ -95,8 +112,11 @@ STEP 5 — Open & Use
   Health check:
     curl http://localhost:8080/api/v1/health
 
-  Rebuild frontend (after UI code changes):
-    cd ~/Desktop/codesense/frontend && npm run build
+  List all scan jobs:
+    curl http://localhost:8080/api/v1/jobs
+
+  Check a specific job by UUID:
+    curl http://localhost:8080/api/v1/jobs/by-uuid/<uuid>
 
 
 ════════════════════════════════════════════════════════════════
@@ -108,13 +128,27 @@ STEP 5 — Open & Use
     sg docker -c "docker run -d --name cs_patch --entrypoint sleep codesense-app 3600"
     sg docker -c "docker cp <local-file> cs_patch:/app/<container-path>"
     sg docker -c "docker commit cs_patch codesense-app && docker rm -f cs_patch"
-    sg docker -c "docker compose up -d --force-recreate app"
+    sg docker -c "docker compose up -d --force-recreate app worker"
 
-  Example — patch llm_reasoner.py:
-    sg docker -c "docker cp app/agent/nodes/llm_reasoner.py cs_patch:/app/app/agent/nodes/llm_reasoner.py"
+  Example — patch pdf_gen.py:
+    sg docker -c "docker cp app/worker/pdf_gen.py cs_patch:/app/app/worker/pdf_gen.py"
 
-  Then rebuild frontend if any .jsx files changed:
-    cd frontend && npm run build
+  Frontend changes are picked up automatically by Vite HMR (no restart needed).
+
+
+════════════════════════════════════════════════════════════════
+  DATABASE MIGRATIONS
+════════════════════════════════════════════════════════════════
+
+  SQLAlchemy create_all does NOT alter existing tables.
+  For new columns, run ALTER TABLE directly:
+
+    sg docker -c "docker exec codesense-postgres psql -U codeagent -d codeagent -c \
+      'ALTER TABLE scan_jobs ADD COLUMN IF NOT EXISTS <col> <type>;'"
+
+  Columns added since initial setup:
+    uuid       VARCHAR(36)  UNIQUE  DEFAULT gen_random_uuid()::text
+    pr_number  INTEGER
 
 
 ════════════════════════════════════════════════════════════════
@@ -128,8 +162,16 @@ STEP 5 — Open & Use
   Groq free tier limits:
     1,000 requests/day · 30 req/min · 6,000 tokens/min · 100,000 tokens/day
 
-  All 11 tasks are zero-input — select a repo and click Run Agent:
-    PR Review      →  auto-fetches all open PRs (up to 5) and reviews each
+  Job queue:
+    Backend  →  Redis + arq worker
+    Max concurrent jobs: 4
+    Retries on failure: 2
+    PDF generated automatically on job completion (stored in reports_data volume)
+    PDF also generated on-demand at download time if missing
+
+  All 11 workflows are queue-based — select a repo and click Add Scan:
+
+    PR Review      →  two-step: pick repo → pick specific open PR → review that PR's diff
     Bug Scan       →  per-chunk scan across full repo (80-line chunks, max 25)
     Explain Code   →  architecture overview: layers, modules, data flow, entry points
     Refactor       →  identifies refactoring opportunities with priority + code snippets
@@ -140,6 +182,9 @@ STEP 5 — Open & Use
     Version Bumps  →  reads manifests, recommends specific version numbers
     License Check  →  audits LICENSE + manifests for copyleft compliance risks
     Vuln Scan      →  CVE detection across all dependency manifests
+
+  Repo Scans (batch mode):
+    Select multiple scan types for one repo → single queued job → one PDF covering all types
 
 
 ════════════════════════════════════════════════════════════════

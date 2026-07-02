@@ -109,6 +109,38 @@ async def logout(response: Response):
 
 # ── GitHub API proxy ──────────────────────────────────────────────
 
+@router.get("/pulls")
+async def list_pulls(repo_full_name: str, session: str | None = Cookie(default=None)):
+    """List open pull requests for a GitHub repository."""
+    user         = get_current_user(session)
+    github_token = user["github_token"]
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{GITHUB_API}/repos/{repo_full_name}/pulls",
+            headers={"Authorization": f"Bearer {github_token}"},
+            params={"state": "open", "per_page": 50, "sort": "updated"},
+        )
+        if resp.status_code == 404:
+            raise HTTPException(status_code=404, detail="Repository not found")
+        prs = resp.json()
+
+    if not isinstance(prs, list):
+        return []
+
+    return [
+        {
+            "number":     pr["number"],
+            "title":      pr["title"],
+            "user":       pr["user"]["login"],
+            "created_at": pr["created_at"],
+            "html_url":   pr["html_url"],
+        }
+        for pr in prs
+        if isinstance(pr, dict) and "number" in pr
+    ]
+
+
 @router.get("/repos")
 async def list_repos(session: str | None = Cookie(default=None)):
     """List authenticated user's GitHub repositories."""
